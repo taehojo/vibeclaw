@@ -1,0 +1,23 @@
+{
+  "id": "vibeclaw",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiKey": {
+        "type": "string",
+        "description": "Vibe Index API key (vibe_live_*). Get one at https://vibeindex.ai/developer"
+      },
+      "autoRecommend": {
+        "type": "boolean",
+        "description": "Automatically recommend skills when a capability is missing"
+      },
+      "maxResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+        "description": "Maximum number of skill recommendations to show"
+      }
+    }
+  }
+}
