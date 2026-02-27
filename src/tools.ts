@@ -88,7 +88,7 @@ export function createSearchTool(client: VibeIndexClient) {
   return {
     name: "vibeclaw_search",
     description:
-      "Search the Vibe Index ecosystem (27,700+ resources) for skills, plugins, MCP servers, and marketplaces. " +
+      "Search the Vibe Index ecosystem (93,600+ resources) for skills, plugins, MCP servers, and marketplaces. " +
       "Use this when the user needs a capability you don't currently have, or when they ask about available tools. " +
       "Returns ranked results. After finding a skill, use vibeclaw_install to install it directly.",
     parameters: {

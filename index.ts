@@ -1,7 +1,7 @@
 /**
  * VibeClaw — Zero-Config Skill Discovery for OpenClaw
  *
- * Connects OpenClaw to the Vibe Index ecosystem (27,700+ resources).
+ * Connects OpenClaw to the Vibe Index ecosystem (93,600+ resources).
  * When the AI agent encounters a task it can't handle, VibeClaw searches
  * the Vibe Index catalog and recommends the right skill/plugin/MCP server
  * with a ready-to-use install command.
@@ -23,7 +23,7 @@ const vibeClawPlugin = {
   id: "vibeclaw",
   name: "VibeClaw",
   description:
-    "Zero-Config skill discovery — search, recommend, and install skills from the Vibe Index ecosystem (27,700+ resources)",
+    "Zero-Config skill discovery — search, recommend, and install skills from the Vibe Index ecosystem (93,600+ resources)",
   configSchema: emptyPluginConfigSchema(),
 
   register(api: OpenClawPluginApi) {
@@ -50,7 +50,7 @@ const vibeClawPlugin = {
         "",
         "## VibeClaw — Skill Discovery",
         "",
-        "You have access to VibeClaw tools that connect to the Vibe Index ecosystem (27,700+ skills, plugins, and MCP servers).",
+        "You have access to VibeClaw tools that connect to the Vibe Index ecosystem (93,600+ skills, plugins, and MCP servers).",
         "",
         "**When to use VibeClaw:**",
         "- When you cannot fulfill a user's request because a required skill/tool is not installed",
