@@ -55,10 +55,10 @@ export interface VibeTrendingResult {
 }
 
 export class VibeIndexClient {
-  private apiKey: string;
+  private apiKey: string | undefined;
   private baseUrl: string;
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(apiKey?: string, baseUrl?: string) {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl ?? VIBE_INDEX_BASE_URL;
   }
@@ -69,12 +69,14 @@ export class VibeIndexClient {
       if (value) url.searchParams.set(key, value);
     }
 
-    const response = await globalThis.fetch(url.toString(), {
-      headers: {
-        "X-API-Key": this.apiKey,
-        "User-Agent": "VibeClaw/0.3.0",
-      },
-    });
+    const headers: Record<string, string> = {
+      "User-Agent": "VibeClaw/0.4.0",
+    };
+    if (this.apiKey) {
+      headers["X-API-Key"] = this.apiKey;
+    }
+
+    const response = await globalThis.fetch(url.toString(), { headers });
 
     if (!response.ok) {
       throw new Error(`Vibe Index API error: ${response.status} ${response.statusText}`);

@@ -29,13 +29,6 @@ const vibeClawPlugin = {
   register(api: OpenClawPluginApi) {
     const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
     const apiKey = pluginConfig.apiKey as string | undefined;
-    if (!apiKey) {
-      api.logger.warn(
-        "VibeClaw: no API key configured. Set plugins.entries.vibeclaw.config.apiKey " +
-          "to a Vibe Index API key (vibe_live_*). Get one at https://vibeindex.ai/developer",
-      );
-      return;
-    }
     const client = new VibeIndexClient(apiKey);
 
     const config: VibeClawConfig = {
