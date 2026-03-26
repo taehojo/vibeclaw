@@ -1,6 +1,6 @@
 {
   "name": "vibeclaw",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "VibeClaw: Zero-Config skill discovery for OpenClaw via Vibe Index (93,600+ resources)",
   "type": "module",
   "license": "MIT",
@@ -21,6 +21,9 @@
     "src/",
     "openclaw.plugin.json"
   ],
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.48"
+  },
   "peerDependencies": {
     "openclaw": ">=2026.1.26"
   },
@@ -30,7 +33,6 @@
     ]
   },
   "devDependencies": {
-    "@sinclair/typebox": "^0.34.48",
     "openclaw": "^2026.3.24"
   }
 }
