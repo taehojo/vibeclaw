@@ -8,6 +8,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
 import { VibeIndexClient } from "./src/vibe-index-client.js";
 import type { VibeResource } from "./src/vibe-index-client.js";
@@ -53,6 +54,7 @@ const vibeClawPlugin = {
   name: "VibeClaw",
   description:
     "Zero-Config skill discovery - search, recommend, and install skills from the Vibe Index ecosystem (93,600+ resources)",
+  configSchema: emptyPluginConfigSchema(),
 
   register(api: OpenClawPluginApi) {
     const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
