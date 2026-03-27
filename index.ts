@@ -7,7 +7,7 @@
  * with a ready-to-use install command.
  */
 
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
 import { VibeIndexClient } from "./src/vibe-index-client.js";
 import type { VibeResource } from "./src/vibe-index-client.js";
@@ -15,21 +15,10 @@ import { installSkillFromGitHub, listInstalledSkills, uninstallSkill, getInstall
 
 function checkSecurity(skill: VibeResource): string | null {
   if (skill.cisco_scan_result && !skill.cisco_scan_result.is_safe) {
-    const sev = skill.cisco_scan_result.max_severity;
-    const count = skill.cisco_scan_result.findings_count;
-    return (
-      `BLOCKED: "${skill.name}" failed Vibe Index security scan.\n` +
-      `  Severity: ${sev}\n  Findings: ${count} issue(s)\n` +
-      (skill.security_flags?.length ? `  Flags: ${skill.security_flags.join(", ")}\n` : "") +
-      `See https://vibeindex.ai for details.`
-    );
+    return `BLOCKED: "${skill.name}" failed security scan. Severity: ${skill.cisco_scan_result.max_severity}. See https://vibeindex.ai`;
   }
   if (skill.security_score !== null && skill.security_score >= 25) {
-    return (
-      `BLOCKED: "${skill.name}" has a high security risk score (${skill.security_score}).\n` +
-      (skill.security_flags?.length ? `  Flags: ${skill.security_flags.join(", ")}\n` : "") +
-      `See https://vibeindex.ai for details.`
-    );
+    return `BLOCKED: "${skill.name}" has high security risk (score: ${skill.security_score}). See https://vibeindex.ai`;
   }
   return null;
 }
@@ -52,21 +41,20 @@ function formatResource(r: VibeResource, index: number): string {
   const desc = r.description
     ? r.description.length > 120 ? r.description.slice(0, 120) + "..." : r.description
     : "No description";
-  const typeLabel = r.resource_type.toUpperCase();
-  let result = `${index}. ${r.name} (${typeLabel}) - ${stars} stars${badgeStr}\n`;
+  let result = `${index}. ${r.name} (${r.resource_type.toUpperCase()}) - ${stars} stars${badgeStr}\n`;
   result += `   ${desc}\n`;
   result += `   Security: ${formatSecurityBadge(r)}\n`;
   if (r.github_url) result += `   GitHub: ${r.github_url}\n`;
   return result;
 }
 
-export default definePluginEntry({
+const vibeClawPlugin = {
   id: "vibeclaw",
   name: "VibeClaw",
   description:
     "Zero-Config skill discovery - search, recommend, and install skills from the Vibe Index ecosystem (93,600+ resources)",
 
-  register(api) {
+  register(api: OpenClawPluginApi) {
     const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
     const apiKey = pluginConfig.apiKey as string | undefined;
     const client = new VibeIndexClient(apiKey);
@@ -77,35 +65,28 @@ export default definePluginEntry({
     api.registerTool({
       name: "vibeclaw_search",
       description:
-        "Search the Vibe Index ecosystem (93,600+ resources) for skills, plugins, MCP servers, and marketplaces. " +
-        "Use this when the user needs a capability you don't currently have, or when they ask about available tools. " +
-        "Returns ranked results with security status. After finding a skill, use vibeclaw_install to install it.",
+        "Search the Vibe Index ecosystem (93,600+ skills, plugins, MCP servers) for capabilities. " +
+        "Use when the user needs something you cannot do, or asks about available tools.",
       parameters: Type.Object({
-        query: Type.String({ description: "Search query describing the capability needed (e.g., 'email', 'github pr', 'weather')" }),
+        query: Type.String({ description: "Search query (e.g., 'email', 'calendar', 'weather')" }),
         type: Type.Optional(Type.Union([
-          Type.Literal("skill"),
-          Type.Literal("plugin"),
-          Type.Literal("mcp"),
-          Type.Literal("marketplace"),
-        ], { description: "Filter by resource type. Omit to search all types." })),
-        limit: Type.Optional(Type.Number({ description: "Number of results to return (1-10, default 5)" })),
+          Type.Literal("skill"), Type.Literal("plugin"), Type.Literal("mcp"), Type.Literal("marketplace"),
+        ])),
+        limit: Type.Optional(Type.Number({ description: "Results count (1-10, default 5)" })),
       }),
-      async execute(_id, params) {
+      async execute(_id: string, params: { query: string; type?: string; limit?: number }) {
         try {
-          const result = await client.search(params.query, {
-            type: params.type,
-            limit: params.limit ?? 5,
-          });
+          const result = await client.search(params.query, { type: params.type, limit: params.limit ?? 5 });
           if (!result.success || result.data.length === 0) {
-            return { content: [{ type: "text" as const, text: `No results found for "${params.query}" in the Vibe Index ecosystem.` }] };
+            return { content: [{ type: "text" as const, text: `No results for "${params.query}" in Vibe Index.` }] };
           }
           const total = result.pagination?.total ?? result.data.length;
           let output = `Found ${total} results for "${params.query}" in Vibe Index:\n\n`;
           output += result.data.map((r, i) => formatResource(r, i + 1)).join("\n");
-          output += `\nUse vibeclaw_install to install any of these skills directly.`;
+          output += `\nUse vibeclaw_install to install any skill.`;
           return { content: [{ type: "text" as const, text: output }] };
         } catch (err) {
-          return { content: [{ type: "text" as const, text: `Error searching Vibe Index: ${(err as Error).message}` }] };
+          return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
         }
       },
     });
@@ -114,52 +95,38 @@ export default definePluginEntry({
     api.registerTool({
       name: "vibeclaw_install",
       description:
-        "Install a skill directly from GitHub into OpenClaw. Downloads the SKILL.md file and places it " +
-        "in ~/.openclaw/skills/ so OpenClaw loads it automatically. Use after vibeclaw_search finds a skill.",
+        "Install a skill from Vibe Index into OpenClaw. Downloads SKILL.md from GitHub to ~/.openclaw/skills/.",
       parameters: Type.Object({
-        query: Type.String({ description: "Skill name or search query to find and install" }),
-        force: Type.Optional(Type.Boolean({ description: "Reinstall even if already installed (default: false)" })),
+        query: Type.String({ description: "Skill name or search query" }),
+        force: Type.Optional(Type.Boolean({ description: "Reinstall if exists" })),
       }),
-      async execute(_id, params) {
+      async execute(_id: string, params: { query: string; force?: boolean }) {
         if (searchOnly) {
-          return { content: [{ type: "text" as const, text: "Installation is disabled. This VibeClaw instance is in search-only mode." }] };
+          return { content: [{ type: "text" as const, text: "Installation disabled (search-only mode)." }] };
         }
         try {
           const searchResult = await client.search(params.query, { type: "skill", limit: 1 });
           if (!searchResult.success || searchResult.data.length === 0) {
-            return { content: [{ type: "text" as const, text: `Could not find skill "${params.query}" in Vibe Index.` }] };
+            return { content: [{ type: "text" as const, text: `Skill "${params.query}" not found in Vibe Index.` }] };
           }
           const skill = searchResult.data[0];
           if (!skill.github_owner || !skill.github_repo) {
-            return { content: [{ type: "text" as const, text: `Found "${skill.name}" but it has no GitHub repository.` }] };
+            return { content: [{ type: "text" as const, text: `"${skill.name}" has no GitHub repo.` }] };
           }
-          if (allowedPublishers && allowedPublishers.length > 0) {
+          if (allowedPublishers?.length) {
             const allowed = allowedPublishers.map(p => p.toLowerCase());
-            if (!allowed.includes((skill.github_owner || "").toLowerCase())) {
-              return { content: [{ type: "text" as const, text: `BLOCKED: "${skill.name}" publisher "${skill.github_owner}" is not in your allowlist.` }] };
+            if (!allowed.includes((skill.github_owner).toLowerCase())) {
+              return { content: [{ type: "text" as const, text: `BLOCKED: "${skill.github_owner}" not in allowlist.` }] };
             }
           }
-          const securityBlock = checkSecurity(skill);
-          if (securityBlock) {
-            return { content: [{ type: "text" as const, text: securityBlock }] };
-          }
+          const sec = checkSecurity(skill);
+          if (sec) return { content: [{ type: "text" as const, text: sec }] };
           const result = await installSkillFromGitHub(skill.github_owner, skill.github_repo, skill.slug || skill.name, { force: params.force });
-          if (!result.success) {
-            return { content: [{ type: "text" as const, text: `Failed to install "${skill.name}": ${result.error}` }] };
-          }
-          if (result.alreadyInstalled) {
-            return { content: [{ type: "text" as const, text: `"${skill.name}" is already installed at ${result.installPath}. Use force: true to reinstall.` }] };
-          }
-          let output = `Installed "${result.skillName}" successfully!\n\n`;
-          output += `  Location: ${result.installPath}\n`;
-          output += `  Source: ${result.sourceUrl}\n`;
-          output += `  Publisher: ${skill.github_owner}\n`;
-          output += `  Stars: ${skill.stars}\n`;
-          output += `  Security: ${formatSecurityBadge(skill)}\n`;
-          output += `\nThe skill will be available in your next agent session.`;
-          return { content: [{ type: "text" as const, text: output }] };
+          if (!result.success) return { content: [{ type: "text" as const, text: `Install failed: ${result.error}` }] };
+          if (result.alreadyInstalled) return { content: [{ type: "text" as const, text: `"${skill.name}" already installed. Use force to reinstall.` }] };
+          return { content: [{ type: "text" as const, text: `Installed "${result.skillName}"!\n  Path: ${result.installPath}\n  Stars: ${skill.stars}\n  Security: ${formatSecurityBadge(skill)}\n\nAvailable on next session.` }] };
         } catch (err) {
-          return { content: [{ type: "text" as const, text: `Error installing skill: ${(err as Error).message}` }] };
+          return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
         }
       },
     });
@@ -167,46 +134,22 @@ export default definePluginEntry({
     // vibeclaw_trending
     api.registerTool({
       name: "vibeclaw_trending",
-      description:
-        "Get trending skills, plugins, and MCP servers from the Vibe Index ecosystem. " +
-        "Shows what's gaining the most stars recently.",
+      description: "Show trending skills/plugins/MCP servers from Vibe Index.",
       parameters: Type.Object({
-        period: Type.Optional(Type.Union([
-          Type.Literal("day"),
-          Type.Literal("week"),
-          Type.Literal("month"),
-        ], { description: "Time period (default: week)" })),
-        type: Type.Optional(Type.Union([
-          Type.Literal("skill"),
-          Type.Literal("plugin"),
-          Type.Literal("mcp"),
-          Type.Literal("marketplace"),
-        ], { description: "Filter by resource type" })),
-        limit: Type.Optional(Type.Number({ description: "Number of results (1-10, default 5)" })),
+        period: Type.Optional(Type.Union([Type.Literal("day"), Type.Literal("week"), Type.Literal("month")])),
+        type: Type.Optional(Type.Union([Type.Literal("skill"), Type.Literal("plugin"), Type.Literal("mcp"), Type.Literal("marketplace")])),
+        limit: Type.Optional(Type.Number()),
       }),
-      async execute(_id, params) {
+      async execute(_id: string, params: { period?: string; type?: string; limit?: number }) {
         try {
-          const result = await client.trending({
-            period: (params.period as "day" | "week" | "month") ?? "week",
-            type: params.type,
-            limit: params.limit ?? 5,
-          });
-          if (!result.success || result.data.length === 0) {
-            return { content: [{ type: "text" as const, text: "No trending data available right now." }] };
-          }
-          const periodLabel = params.period === "day" ? "today" : params.period === "month" ? "this month" : "this week";
-          let output = `Trending ${params.type ?? "resources"} ${periodLabel} on Vibe Index:\n\n`;
-          for (let i = 0; i < result.data.length; i++) {
-            const r = result.data[i];
-            const growth = r.star_growth ? ` (+${r.star_growth} stars)` : "";
-            output += formatResource(r, i + 1);
-            if (growth) output += `   Growth: ${growth}\n`;
-            output += "\n";
-          }
-          output += `Use vibeclaw_install to install any of these.`;
+          const result = await client.trending({ period: (params.period as "day"|"week"|"month") ?? "week", type: params.type, limit: params.limit ?? 5 });
+          if (!result.success || result.data.length === 0) return { content: [{ type: "text" as const, text: "No trending data." }] };
+          const p = params.period === "day" ? "today" : params.period === "month" ? "this month" : "this week";
+          let output = `Trending on Vibe Index ${p}:\n\n`;
+          result.data.forEach((r, i) => { output += formatResource(r, i + 1) + "\n"; });
           return { content: [{ type: "text" as const, text: output }] };
         } catch (err) {
-          return { content: [{ type: "text" as const, text: `Error fetching trending: ${(err as Error).message}` }] };
+          return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
         }
       },
     });
@@ -214,102 +157,60 @@ export default definePluginEntry({
     // vibeclaw_manage
     api.registerTool({
       name: "vibeclaw_manage",
-      description:
-        "List or uninstall skills that were installed via VibeClaw.",
+      description: "List or uninstall VibeClaw-installed skills.",
       parameters: Type.Object({
-        action: Type.Union([Type.Literal("list"), Type.Literal("uninstall")], { description: "Action to perform" }),
-        skillName: Type.Optional(Type.String({ description: "Skill name to uninstall (required for uninstall)" })),
+        action: Type.Union([Type.Literal("list"), Type.Literal("uninstall")]),
+        skillName: Type.Optional(Type.String()),
       }),
-      async execute(_id, params) {
+      async execute(_id: string, params: { action: string; skillName?: string }) {
         if (params.action === "list") {
           const skills = await listInstalledSkills();
-          if (skills.length === 0) {
-            return { content: [{ type: "text" as const, text: "No skills installed via VibeClaw yet." }] };
-          }
-          let output = `VibeClaw-installed skills (${skills.length}):\n\n`;
-          for (const name of skills) output += `  - ${name}\n`;
-          return { content: [{ type: "text" as const, text: output }] };
+          if (skills.length === 0) return { content: [{ type: "text" as const, text: "No VibeClaw-installed skills." }] };
+          return { content: [{ type: "text" as const, text: `VibeClaw skills (${skills.length}):\n${skills.map(s => `  - ${s}`).join("\n")}` }] };
         }
-        if (params.action === "uninstall") {
-          if (!params.skillName) {
-            return { content: [{ type: "text" as const, text: "Please specify which skill to uninstall." }] };
-          }
+        if (params.action === "uninstall" && params.skillName) {
           const removed = await uninstallSkill(params.skillName);
-          if (removed) {
-            return { content: [{ type: "text" as const, text: `Uninstalled "${params.skillName}". It will be removed on next session.` }] };
-          }
-          return { content: [{ type: "text" as const, text: `"${params.skillName}" was not found or was not installed via VibeClaw.` }] };
+          return { content: [{ type: "text" as const, text: removed ? `Uninstalled "${params.skillName}".` : `"${params.skillName}" not found.` }] };
         }
-        return { content: [{ type: "text" as const, text: `Unknown action: ${params.action}` }] };
+        return { content: [{ type: "text" as const, text: "Specify action and skillName." }] };
       },
     });
 
     // vibeclaw_audit
     api.registerTool({
       name: "vibeclaw_audit",
-      description:
-        "Audit all VibeClaw-installed skills against the latest Vibe Index security data. " +
-        "Detects skills that were safe when installed but have since been flagged.",
+      description: "Audit VibeClaw-installed skills against latest Vibe Index security data.",
       parameters: Type.Object({}),
       async execute() {
         try {
           const skills = await listInstalledSkills();
-          if (skills.length === 0) {
-            return { content: [{ type: "text" as const, text: "No VibeClaw-installed skills to audit." }] };
-          }
-          const flagged: string[] = [];
-          const safe: string[] = [];
-          const unknown: string[] = [];
+          if (skills.length === 0) return { content: [{ type: "text" as const, text: "No skills to audit." }] };
+          const lines: string[] = [];
           for (const name of skills) {
-            const meta = await getInstalledSkillMeta(name);
-            const searchResult = await client.search(name, { type: "skill", limit: 1 });
-            if (!searchResult.success || searchResult.data.length === 0) {
-              unknown.push(`${name} - Not found in Vibe Index (may have been removed)`);
-              continue;
-            }
-            const skill = searchResult.data[0];
-            const issue = checkSecurity(skill);
-            if (issue) {
-              flagged.push(`${name} - FLAGGED: ${issue}`);
-            } else {
-              const badge = formatSecurityBadge(skill);
-              const installedAt = meta?.installedAt ? ` (installed ${meta.installedAt.split("T")[0]})` : "";
-              safe.push(`${name} - ${badge}${installedAt}`);
-            }
+            const res = await client.search(name, { type: "skill", limit: 1 });
+            if (!res.success || res.data.length === 0) { lines.push(`${name}: not found`); continue; }
+            const issue = checkSecurity(res.data[0]);
+            lines.push(issue ? `${name}: FLAGGED` : `${name}: safe (${formatSecurityBadge(res.data[0])})`);
           }
-          let output = `VibeClaw Security Audit - ${skills.length} skill(s) checked\n\n`;
-          if (flagged.length > 0) output += `FLAGGED (${flagged.length}):\n${flagged.map(f => `  ${f}`).join("\n")}\n\n`;
-          if (safe.length > 0) output += `Safe (${safe.length}):\n${safe.map(s => `  ${s}`).join("\n")}\n\n`;
-          if (unknown.length > 0) output += `Unknown (${unknown.length}):\n${unknown.map(u => `  ${u}`).join("\n")}\n\n`;
-          if (flagged.length === 0) output += "All installed skills passed the security check.";
-          return { content: [{ type: "text" as const, text: output }] };
+          return { content: [{ type: "text" as const, text: `Audit (${skills.length} skills):\n${lines.join("\n")}` }] };
         } catch (err) {
-          return { content: [{ type: "text" as const, text: `Error running audit: ${(err as Error).message}` }] };
+          return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
         }
       },
     });
 
-    // Inject system prompt context
-    api.on("before_prompt_build", () => {
-      const searchOnlyNote = searchOnly ? "\nNote: This instance is in search-only mode. vibeclaw_install is disabled." : "";
-      const allowlistNote = allowedPublishers
-        ? `\nNote: Only skills from these publishers can be installed: ${allowedPublishers.join(", ")}`
-        : "";
+    // System prompt injection
+    api.on("before_prompt_build", () => ({
+      prependContext: [
+        "\n## VibeClaw - Skill Discovery (Powered by Vibe Index)\n",
+        "You have these VibeClaw tools: vibeclaw_search, vibeclaw_install, vibeclaw_trending, vibeclaw_manage, vibeclaw_audit.",
+        "When you cannot fulfill a request, use vibeclaw_search to find a skill and vibeclaw_install to install it.",
+        "When asked about trending tools, use vibeclaw_trending.\n",
+      ].join("\n"),
+    }));
 
-      return {
-        prependContext: [
-          "",
-          "## VibeClaw - Skill Discovery (Powered by Vibe Index)",
-          "",
-          `You have VibeClaw tools that connect to the Vibe Index ecosystem (93,600+ skills, plugins, and MCP servers).${searchOnlyNote}${allowlistNote}`,
-          "",
-          "When you cannot fulfill a request because a required skill is not installed, use vibeclaw_search to find it and vibeclaw_install to install it.",
-          "When the user asks about trending or popular tools, use vibeclaw_trending.",
-          "",
-        ].join("\n"),
-      };
-    });
-
-    api.logger.info("VibeClaw plugin registered - Vibe Index ecosystem connected");
+    api.logger.info("VibeClaw plugin registered - 5 tools available (search, install, trending, manage, audit)");
   },
-});
+};
+
+export default vibeClawPlugin;
